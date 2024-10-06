@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facebook Large Page-Page Network Visualization</title>
+    <style>
+        /* 设置全局页面样式 */
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .container {
+            display: flex;
+            justify-content: center;
+        }
+
+        svg {
+            border: 2px solid #ccc;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+            background-color: #fff;
+        }
+
+        .link {
+            stroke: #aaa;
+            stroke-opacity: 0.8;
+            stroke-width: 1.0px;
+        }
+
+        .node circle {
+            stroke: #fff;
+            stroke-width: 1.5px;
+            transition: all 0.3s ease;
+            /* 节点悬停时的过渡效果 */
+        }
+
+        .node circle:hover {
+            stroke: #ff6347;
+            /* 悬停时边框颜色变化 */
+            stroke-width: 3px;
+            /* 悬停时加粗边框 */
+        }
+
+        .node text {
+            font-size: 10px;
+            pointer-events: none;
+            fill: #333;
+        }
+
+        /* 工具提示框 */
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            width: auto;
+            height: auto;
+            padding: 8px;
+            font: 12px sans-serif;
+            background: rgba(0, 0, 0, 0.7);
+            border: 0px;
+            border-radius: 8px;
+            pointer-events: none;
+            color: white;
+        }
+
+        /* 相连节点列表样式 */
+        .node-list {
+            margin-left: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #fff;
+            width: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .node-list h2 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .node-list ul {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        .node-list li {
+            padding: 5px 0;
+            color: #555;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Facebook Large Page-Page Network Visualization</h1>
+
+    <div class="container">
+        <svg width="960" height="600"></svg>
+        <div class="node-list">
+            <h2>Connected Nodes</h2>
+            <ul id="connectedNodesList"></ul>
+        </div>
+    </div>
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script>
+        // 工具提示
+        const tooltip = d3.select("body").append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0);
+        // 定义颜色比例尺
+        const color = d3.scaleOrdinal()
+            .domain(["government", "business", "non-profit", "personal"]) // 定义类别
+            .range(["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]); // 分配给每个类别的颜色
+
+        d3.json("graph.json").then(function (graph) {
+            const width = 960;
+            const height = 600;
+
+            const svg = d3.select("svg")
+                .attr("width", width)
+                .attr("height", height);
+
+            const g = svg.append("g");
+
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 4])
+                .on("zoom", (event) => {
+                    g.attr("transform", event.transform);
+                });
+
+            svg.call(zoom);
+
+            const color = d3.scaleOrdinal(d3.schemeCategory10);  // 使用颜色比例尺
+
+            // 力导向图模拟
+            const simulation = d3.forceSimulation(graph.nodes)
+                .force("link", d3.forceLink(graph.links).id(d => d.id).distance(80))
+                .force("charge", d3.forceManyBody().strength(-60))
+                .force("center", d3.forceCenter(width / 2, height / 2));
+
+            // 添加边（链接）
+            const link = g.append("g")
+                .attr("class", "links")
+                .selectAll("line")
+                .data(graph.links)
+                .enter().append("line")
+                .attr("class", "link");
+
+
+
+
+            // 添加节点
+            const node = g.append("g")
+                .attr("class", "nodes")
+                .selectAll("g")
+                .data(graph.nodes)
+                .enter().append("g");
+
+            node.append("circle")
+                .attr("r", 6)
+                .attr("fill", d => color(d.page_type))  // 使用不同颜色区分节点
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended))
+                .on("mouseover", (event, d) => {
+                    highlightNode(d);
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+
+                    // 创建节点信息的字符串
+                    let info = `Node ID: ${d.id}<br>`;
+                    info += `Facebook ID: ${d.facebook_id}<br>`;
+                    info += `Page Name: ${d.page_name}<br>`;
+                    info += `Page Type: ${d.page_type}<br>`;
+
+                    tooltip.html(info)  // 显示节点信息
+                        .style("left", (event.pageX + 5) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", () => {
+                    resetHighlight();
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                })
+                .on("click", (event, d) => {
+                    displayConnectedNodes(d);
+                });  // 添加点击事件
+
+            node.append("text")
+                .text(d => d.page_name)
+                .attr("x", 8)
+                .attr("y", 3);
+
+            // 更新节点和边的位置
+            simulation.on("tick", () => {
+                link
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+
+                node
+                    .attr("transform", d => `translate(${d.x},${d.y})`);
+            });
+
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+
+            // 高亮与当前节点相连的节点和边
+            function highlightNode(d) {
+                const connectedNodes = new Set();
+                const connectedLinks = [];
+
+                // 查找与当前节点相连的节点和边
+                graph.links.forEach(link => {
+                    if (link.source.id === d.id || link.target.id === d.id) {
+                        connectedNodes.add(link.source.id);
+                        connectedNodes.add(link.target.id);
+                        connectedLinks.push(link);
+                    }
+                });
+
+                // 高亮连接的节点
+                node.selectAll("circle").attr("fill", nodeData => {
+                    return connectedNodes.has(nodeData.id) ? "#ff6347" : "#ccc";
+                });
+
+                // 高亮连接的边
+                link.attr("stroke", linkData => {
+                    return connectedLinks.includes(linkData) ? "#ff6347" : "#aaa";
+                });
+            }
+
+            // 复位所有节点和边的颜色
+            function resetHighlight() {
+                node.selectAll("circle").attr("fill", d => color(d.page_type));
+                link.attr("stroke", "#aaa");
+            }
+
+            // 显示与当前点击节点相连的节点
+            function displayConnectedNodes(d) {
+                const connectedNodes = [];
+
+                // 查找与当前节点相连的节点
+                graph.links.forEach(link => {
+                    if (link.source.id === d.id) {
+                        connectedNodes.push(link.target.id);
+                    } else if (link.target.id === d.id) {
+                        connectedNodes.push(link.source.id);
+                    }
+                });
+
+                // 更新列表内容
+                const nodeList = d3.select("#connectedNodesList");
+                nodeList.html("");  // 清空之前的列表
+                connectedNodes.forEach(nodeId => {
+                    // 查找完整的节点数据
+                    const nodeData = graph.nodes.find(n => n.id === nodeId);
+
+                    // 确保找到相应节点
+                    if (nodeData) {
+                        // 创建节点信息的字符串
+                        let nodeInfo = `Node ID: ${nodeData.id}<br>`;
+                        nodeInfo += `Facebook ID: ${nodeData.facebook_id}<br>`;
+                        nodeInfo += `Page Name: ${nodeData.page_name}<br>`;
+                        nodeInfo += `Page Type: ${nodeData.page_type}<br>`;
+
+                        // 将节点信息添加到列表中
+                        nodeList.append("li").html(nodeInfo);
+                    }
+                });
+            }
+        });
+
+    </script>
+</body>
+
+</html>
